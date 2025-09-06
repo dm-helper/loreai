@@ -1,6 +1,71 @@
 # loreai
 A locally executable RPG Lore Management LLM
 
+### **Current CLI Commands & Features**
+
+1. **`ingest <folder>`**
+
+   * Loads all `.md` and `.txt` files from the folder into the vector DB.
+
+2. **`ask <question>`**
+
+   * Retrieves relevant lore chunks.
+   * Sends context + question + theme to the AI.
+   * Prints AI output.
+
+3. **`create <prompt>` (interactive)**
+
+   * Generates new lore based on the prompt and optional theme.
+   * Interactive options for each generation:
+
+     * `[R]` Revise → includes previous output for iterative updates.
+     * `[D]` Draft → saves output to timestamped file in `WORK_DIR`.
+     * `[P]` Publish → saves output as canon, updates references, ingests into vector DB.
+     * `[X]` Discard → ignores output.
+   * Uses `cache_last()` to store last AI output automatically.
+
+4. **`draft --title <title> [--file <path>]`**
+
+   * Saves last AI output (or a specified file) to `WORK_DIR`.
+   * Timestamped filename to avoid overwrites.
+
+5. **`publish --title <title> [--file <path>]`**
+
+   * Publishes last AI output (or a specified file) to `CANON_DIR`.
+   * Refuses to overwrite existing canon files.
+   * Updates references in related files.
+   * Ingests new content into vector DB.
+
+6. **`remove <file>`**
+
+   * Deletes a canon file and removes its chunks from the vector DB.
+
+7. **`reset`**
+
+   * Deletes the vector DB and cache.
+
+8. **`export [--out <file>]`**
+
+   * Combines all canon `.md` files into a single markdown export.
+
+9. **`backup [--out <folder>]`**
+
+   * Copies `CANON_DIR` + `DB_DIR` to a backup folder.
+
+10. **`bootstrap`**
+
+    * Creates starter directories and a sample lore file.
+
+---
+
+### **Interactive `create` Workflow Notes**
+* Each iteration uses **previous AI output** if `Revise` is chosen.
+* Drafts and canon publications use **separate functions**, so workflow is modular.
+* Discarded output does **not affect cache** beyond that session.
+* References section in canon files is automatically appended when publishing new content.
+
+
+
 Step-by-step installation for Windows
 
 1) Install prerequisites
