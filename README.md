@@ -3,58 +3,209 @@ A locally executable RPG Lore Management LLM
 
 ### **Current CLI Commands & Features**
 
-1. **`ingest <folder>`**
+````markdown
+# 📖 LoreAI CLI Documentation
 
-   * Loads all `.md` and `.txt` files from the folder into the vector DB.
+Run the assistant with:
 
-2. **`ask <question>`**
+```bash
+python loreai.py <command> [options]
+````
 
-   * Retrieves relevant lore chunks.
-   * Sends context + question + theme to the AI.
-   * Prints AI output.
+---
 
-3. **`create <prompt>` (interactive)**
+## 🔍 Ingest
 
-   * Generates new lore based on the prompt and optional theme.
-   * Interactive options for each generation:
+**Description:** Ingest a folder of `.md` or `.txt` files into the vector DB.
 
-     * `[R]` Revise → includes previous output for iterative updates.
-     * `[D]` Draft → saves output to timestamped file in `WORK_DIR`.
-     * `[P]` Publish → saves output as canon, updates references, ingests into vector DB.
-     * `[X]` Discard → ignores output.
-   * Uses `cache_last()` to store last AI output automatically.
+```bash
+python loreai.py ingest <folder>
+```
 
-4. **`draft --title <title> [--file <path>]`**
+* `<folder>` → path to folder containing lore files.
 
-   * Saves last AI output (or a specified file) to `WORK_DIR`.
-   * Timestamped filename to avoid overwrites.
+---
 
-5. **`publish --title <title> [--file <path>]`**
+## ❓ Ask
 
-   * Publishes last AI output (or a specified file) to `CANON_DIR`.
-   * Refuses to overwrite existing canon files.
-   * Updates references in related files.
-   * Ingests new content into vector DB.
+**Description:** Query your canon lore. Only published canon (and core) files are used.
 
-6. **`remove <file>`**
+```bash
+python loreai.py ask <question> [--k N] [--model MODEL] [--theme THEME] [--region REGION]
+```
 
-   * Deletes a canon file and removes its chunks from the vector DB.
+* `<question>` → your question text.
+* `--k` (default 8) → number of chunks to retrieve.
+* `--model` (default llama3) → Ollama model to use.
+* `--theme` → optional theme file (e.g. `themes/epic-style.md`).
+* `--region` → optional regional core tag to include region-specific lore.
 
-7. **`reset`**
+---
 
-   * Deletes the vector DB and cache.
+## ✨ Create
 
-8. **`export [--out <file>]`**
+**Description:** Generate new lore interactively. After generation, you can **Revise, Draft, Publish, or Discard**.
 
-   * Combines all canon `.md` files into a single markdown export.
+```bash
+python loreai.py create <prompt> [--model MODEL] [--theme THEME]
+```
 
-9. **`backup [--out <folder>]`**
+* `<prompt>` → initial user prompt.
+* `--model` → Ollama model.
+* `--theme` → optional theme file.
 
-   * Copies `CANON_DIR` + `DB_DIR` to a backup folder.
+---
 
-10. **`bootstrap`**
+## 📝 Drafts
 
-    * Creates starter directories and a sample lore file.
+### Save a Draft
+
+Save the **last AI output** (or a given file) as a draft in the workbench. Drafts are timestamped.
+
+```bash
+python loreai.py draft --title <title> [--file PATH]
+```
+
+* `--title` → draft title.
+* `--file` → optional file to save instead of last AI output.
+
+### List Drafts
+
+Show all current drafts with index numbers.
+
+```bash
+python loreai.py list-drafts
+```
+
+### Publish a Draft
+
+Publish a draft by index from the draft list.
+
+```bash
+python loreai.py publish --draft <index> --title <canon-title> [--global-core] [--regional-core REGION]
+```
+
+* `<index>` → number from `list-drafts`.
+* `--title` → title for the canon file (no overwrite allowed).
+* `--global-core` → mark this lore as global core (always included).
+* `--regional-core` → mark this lore as regional core (tagged by region name).
+
+### Delete a Draft
+
+Delete a single draft by index (with confirmation).
+
+```bash
+python loreai.py delete-draft <index>
+```
+
+### Clear All Drafts
+
+Delete all drafts (with confirmation).
+
+```bash
+python loreai.py clear-drafts
+```
+
+---
+
+## 📚 Publish
+
+Publish the **last AI output** (or a given file) into canon. Updates references and ingests into vector DB.
+
+```bash
+python loreai.py publish --title <canon-title> [--file PATH] [--global-core] [--regional-core REGION]
+```
+
+* `--title` → canon file title (no overwrite).
+* `--file` → optional file to publish instead of last AI output.
+* `--global-core` → mark as global core.
+* `--regional-core` → mark as regional core with region tag.
+
+---
+
+## 🔖 Core Management
+
+### Mark Core
+
+Mark a canon file as global or regional core.
+
+```bash
+python loreai.py mark-core <file> [--global-core] [--regional-core REGION]
+```
+
+### Unmark Core
+
+Remove core status from a canon file.
+
+```bash
+python loreai.py unmark-core <file>
+```
+
+### List Core
+
+List all files marked as global or regional core.
+
+```bash
+python loreai.py list-core
+```
+
+---
+
+## 🗑️ Remove Lore
+
+Remove a lore file and its vector DB entries.
+
+```bash
+python loreai.py remove <file>
+```
+
+---
+
+## ⚙️ Reset
+
+Reset the assistant by clearing the vector DB and cache.
+
+```bash
+python loreai.py reset
+```
+
+---
+
+## 📤 Export
+
+Export all canon lore into a single markdown file.
+
+```bash
+python loreai.py export [--out FILE]
+```
+
+* `--out` → output file path (default `all_lore_export.md`).
+
+---
+
+## 💾 Backup
+
+Backup canon lore and vector DB.
+
+```bash
+python loreai.py backup [--out DIR]
+```
+
+* `--out` → backup folder path (default `<BASE_DIR>/backup`).
+
+---
+
+## 🚀 Bootstrap
+
+Create starter folders and a sample lore file.
+
+```bash
+python loreai.py bootstrap
+```
+
+```
+```
+
 
 ---
 
