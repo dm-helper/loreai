@@ -187,8 +187,8 @@ def ask(question: str, model: str = DEFAULT_MODEL, k: int = 8, theme_name: str =
     user_prompt = (
         f"CONTEXT:\n{context}\n\n"
         f"QUESTION: {question}\n\n"
-        f"Follow SYSTEM_PROMPT rules.\n\n"
-        f"THEME:\n{theme_text}\n"
+        f"Provide elaborate answers. When asked about groups, locations, or organizations, always provide a **complete list of all relevant known entities** from the context. If multiple individuals are associated, list each with all available details.\n\n"
+        f"Follow SYSTEM_PROMPT rules.\n"
     )
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
