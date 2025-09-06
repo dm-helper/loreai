@@ -132,16 +132,23 @@ def ingest_folder(folder: Path):
 
 
 def ingest_file(file_path: Path, global_core: bool = False, regional_core: str = None):
-    """Ingest a single file into vector DB with optional core metadata."""
+    """Ingest a single file into vector DB with optional core metadata.
+    Always clears existing entries for this file first to avoid duplication.
+    """
     ensure_dirs()
     if not file_path.exists():
         print(f"[!] File not found: {file_path}")
         return
 
+    coll = get_collection()
+
+    # === Safe ingestion: delete old entries first ===
+    coll.delete(where={"source": str(file_path)})
+
+    # Read and chunk file
     text = file_path.read_text(encoding="utf-8")
     chunks = chunk_text(text, str(file_path))
-    
-    coll = get_collection()
+
     ids, texts, metas = [], [], []
     for ch in chunks:
         ids.append(ch["id"])
@@ -152,25 +159,44 @@ def ingest_file(file_path: Path, global_core: bool = False, regional_core: str =
             meta["regional_core"] = regional_core.lower()
         metas.append(meta)
 
+    # Add fresh chunks
     coll.add(ids=ids, documents=texts, metadatas=metas)
-    print(f"[*] Ingested {len(chunks)} chunks from {file_path} "
+
+    print(f"[*] Re-ingested {len(chunks)} chunks from {file_path.name} "
           f"(global_core={global_core}, regional_core={regional_core})")
 
 
 
+
 def query_lore(question: str, k: int = 8, region: str = None) -> Dict[str, Any]:
+    """
+    Query the lore database for relevant context.
+    Includes:
+      - similarity search results for the given question
+      - all global-core lore
+      - all regional-core lore (if region is specified)
+    Returns a dict with combined context text, docs, and metadata.
+    """
     ensure_dirs()
     coll = get_collection()
 
-    # Always retrieve global core
-    core_res = coll.query(where={"global_core": True}, n_results=1000)
+    # Always retrieve global core (using dummy query text to satisfy Chroma)
+    core_res = coll.query(
+        query_texts=["core context"],
+        where={"global_core": True},
+        n_results=1000
+    )
     core_docs = core_res.get("documents", [[]])[0]
     core_metas = core_res.get("metadatas", [[]])[0]
 
     # Optionally retrieve regional core
     regional_docs, regional_metas = [], []
     if region:
-        reg_res = coll.query(where={"regional_core": region.lower()}, n_results=1000)
+        reg_res = coll.query(
+            query_texts=["regional context"],
+            where={"regional_core": region.lower()},
+            n_results=1000
+        )
         regional_docs = reg_res.get("documents", [[]])[0]
         regional_metas = reg_res.get("metadatas", [[]])[0]
 
@@ -183,12 +209,14 @@ def query_lore(question: str, k: int = 8, region: str = None) -> Dict[str, Any]:
     combined_docs = core_docs + regional_docs + docs
     combined_metas = core_metas + regional_metas + metas
 
+    # Assemble context string for the LLM
     context = ""
     for i, d in enumerate(combined_docs):
         src = combined_metas[i].get("source", "unknown")
         context += f"\n[Source: {src}]\n{d}\n"
 
     return {"context": context, "docs": combined_docs, "metas": combined_metas}
+
 
 
 def call_llm(messages: List[Dict[str, str]], model: str = DEFAULT_MODEL) -> str:
@@ -367,16 +395,15 @@ def publish_to_canon(title: str, content_path: Path = None, generated_text: str 
     canon_filename = f"{safe_title}.md"
     canon_file_path = CANON_DIR / canon_filename
 
-    # Safety check: refuse overwrite
     if canon_file_path.exists():
-        raise FileExistsError(
-            f"!!! A canon file with this title already exists: {canon_file_path.name}\n"
-            f"Use a different title or remove the existing file first."
-        )
-
-    # Write new canon file
-    canon_file_path.write_text(text, encoding="utf-8")
-    print(f"[*] Published lore: {canon_file_path}")
+        # Append cleanly, just a blank line before the new content
+        with open(canon_file_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n{content}\n")
+        print(f"[*] Appended new lore to existing file: {canon_file_path}")
+    else:
+        # Create a new file
+        canon_file_path.write_text(content + "\n", encoding="utf-8")
+        print(f"[*] Published new lore: {canon_file_path}")
 
     # Detect relevant existing files
     relevant_files = []
@@ -390,10 +417,26 @@ def publish_to_canon(title: str, content_path: Path = None, generated_text: str 
     for existing_file in relevant_files:
         append_reference_to_file(existing_file, canon_file_path)
         print(f"[*] Added reference to {canon_file_path.name} in {existing_file.name}")
+ 
+    # === Safe ingestion: delete old entries first, then re-add ===
+    coll = get_collection()
+    coll.delete(where={"source": str(canon_file_path)})
 
-    # Ingest with metadata
-    ingest_file(canon_file_path, global_core=global_core, regional_core=regional_core)
-    print(f"[*] Ingested published lore into vector DB")
+    file_text = canon_file_path.read_text(encoding="utf-8")
+    chunks = chunk_text(file_text, str(canon_file_path))
+    for ch in chunks:
+        if global_core:
+            ch["metadata"]["global_core"] = True
+        if regional_core:
+            ch["metadata"]["regional_core"] = regional_core.lower()
+
+    coll.add(
+        ids=[ch["id"] for ch in chunks],
+        documents=[ch["text"] for ch in chunks],
+        metadatas=[ch["metadata"] for ch in chunks],
+    )
+
+    print(f"[*] Re-ingested {len(chunks)} chunks from {canon_file_path.name} into vector DB")
 
 
 def mark_core(file: str, global_core: bool = False, regional_core: str = None):
