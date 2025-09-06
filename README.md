@@ -64,9 +64,9 @@ A locally executable RPG Lore Management LLM
 * Discarded output does **not affect cache** beyond that session.
 * References section in canon files is automatically appended when publishing new content.
 
+---
 
-
-Step-by-step installation for Windows
+### **Step-by-step installation for Windows**
 
 1) Install prerequisites
 Python 3.11+ (Windows 10/11):
