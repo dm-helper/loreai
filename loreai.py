@@ -131,43 +131,64 @@ def ingest_folder(folder: Path):
     print(f"[*] Ingested {len(to_add_texts)} chunks from {len(docs)} files.")
 
 
-def ingest_file(file_path: Path):
-    """Ingest a single .md or .txt file into the vector DB."""
+def ingest_file(file_path: Path, global_core: bool = False, regional_core: str = None):
+    """Ingest a single file into vector DB with optional core metadata."""
+    ensure_dirs()
     if not file_path.exists():
         print(f"[!] File not found: {file_path}")
         return
-    docs = load_text_files(file_path.parent)
-    # Only keep the doc matching this file
-    docs = [d for d in docs if Path(d["path"]).resolve() == file_path.resolve()]
-    if not docs:
-        print(f"[i] No valid .md or .txt content found in {file_path}")
-        return
 
+    text = file_path.read_text(encoding="utf-8")
+    chunks = chunk_text(text, str(file_path))
+    
     coll = get_collection()
-    to_add_ids, to_add_texts, to_add_meta = [], [], []
-    for d in docs:
-        chunks = chunk_text(d["text"], d["path"])
-        for ch in chunks:
-            to_add_ids.append(ch["id"])
-            to_add_texts.append(ch["text"])
-            to_add_meta.append(ch["metadata"])
+    ids, texts, metas = [], [], []
+    for ch in chunks:
+        ids.append(ch["id"])
+        texts.append(ch["text"])
+        meta = ch["metadata"]
+        meta["global_core"] = global_core
+        if regional_core:
+            meta["regional_core"] = regional_core.lower()
+        metas.append(meta)
 
-    coll.add(ids=to_add_ids, documents=to_add_texts, metadatas=to_add_meta)
-    print(f"[?] Ingested {len(to_add_texts)} chunks from {file_path.name}")
+    coll.add(ids=ids, documents=texts, metadatas=metas)
+    print(f"[*] Ingested {len(chunks)} chunks from {file_path} "
+          f"(global_core={global_core}, regional_core={regional_core})")
 
 
 
-def query_lore(question: str, k: int = 8) -> Dict[str, Any]:
+def query_lore(question: str, k: int = 8, region: str = None) -> Dict[str, Any]:
     ensure_dirs()
     coll = get_collection()
+
+    # Always retrieve global core
+    core_res = coll.query(where={"global_core": True}, n_results=1000)
+    core_docs = core_res.get("documents", [[]])[0]
+    core_metas = core_res.get("metadatas", [[]])[0]
+
+    # Optionally retrieve regional core
+    regional_docs, regional_metas = [], []
+    if region:
+        reg_res = coll.query(where={"regional_core": region.lower()}, n_results=1000)
+        regional_docs = reg_res.get("documents", [[]])[0]
+        regional_metas = reg_res.get("metadatas", [[]])[0]
+
+    # Retrieve query-specific chunks
     res = coll.query(query_texts=[question], n_results=k)
     docs = res.get("documents", [[]])[0]
     metas = res.get("metadatas", [[]])[0]
+
+    # Merge all results
+    combined_docs = core_docs + regional_docs + docs
+    combined_metas = core_metas + regional_metas + metas
+
     context = ""
-    for i, d in enumerate(docs):
-        src = metas[i].get("source", "unknown")
+    for i, d in enumerate(combined_docs):
+        src = combined_metas[i].get("source", "unknown")
         context += f"\n[Source: {src}]\n{d}\n"
-    return {"context": context, "docs": docs, "metas": metas}
+
+    return {"context": context, "docs": combined_docs, "metas": combined_metas}
 
 
 def call_llm(messages: List[Dict[str, str]], model: str = DEFAULT_MODEL) -> str:
@@ -180,8 +201,9 @@ def call_llm(messages: List[Dict[str, str]], model: str = DEFAULT_MODEL) -> str:
         raise RuntimeError(f"Ollama chat failed: {e}")
 
 
-def ask(question: str, model: str = DEFAULT_MODEL, k: int = 8, theme_name: str = None) -> str:
-    retrieved = query_lore(question, k=k)
+
+def ask(question: str, model: str = DEFAULT_MODEL, k: int = 8, theme_name: str = None, region: str = None) -> str:
+    retrieved = query_lore(question, k=k, region=region)
     context = retrieved["context"]
     theme_text = load_theme(theme_name)
     user_prompt = (
@@ -322,7 +344,7 @@ def draft_to_workdir(title: str, content_path: Path = None, generated_text: str 
 
 
 
-def publish_to_canon(title: str, content_path: Path = None, generated_text: str = None):
+def publish_to_canon(title: str, content_path: Path = None, generated_text: str = None, global_core: bool = False, regional_core: str = None):
     """
     Publish content into canon, update references in related files,
     and ingest it into the vector DB.
@@ -369,10 +391,137 @@ def publish_to_canon(title: str, content_path: Path = None, generated_text: str 
         append_reference_to_file(existing_file, canon_file_path)
         print(f"[*] Added reference to {canon_file_path.name} in {existing_file.name}")
 
-    # Ingest
-    ingest_file(canon_file_path)
+    # Ingest with metadata
+    ingest_file(canon_file_path, global_core=global_core, regional_core=regional_core)
     print(f"[*] Ingested published lore into vector DB")
 
+
+def mark_core(file: str, global_core: bool = False, regional_core: str = None):
+    """Mark an existing canon file as global or regional core by re-ingesting with metadata."""
+    path = Path(file)
+    if not path.is_absolute():
+        path = CANON_DIR / path
+        if not path.suffix:
+            path = path.with_suffix(".md")
+
+    if not path.exists():
+        print(f"[!] File not found: {path}")
+        return
+
+    ingest_file(path, global_core=global_core, regional_core=regional_core)
+    print(f"[*] Marked {path.name} as "
+          f"{'global-core' if global_core else ''} "
+          f"{'regional-core='+regional_core if regional_core else ''}".strip())
+
+
+def list_drafts(return_list=False):
+    """List all drafts in workbench, newest first. 
+    If return_list=True, return Path objects instead of printing."""
+    drafts = sorted(WORK_DIR.glob("*.md"), key=os.path.getmtime, reverse=True)
+    if return_list:
+        return drafts
+
+    from datetime import datetime
+
+    print("\n=== Drafts ===")
+    if not drafts:
+        print("(none)")
+    else:
+        for i, f in enumerate(drafts, 1):
+            ts = datetime.fromtimestamp(os.path.getmtime(f)).strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{i}] {f.name}  (saved {ts})")
+    print("================\n")
+
+
+def delete_draft(index: int):
+    """Delete a single draft by index, with confirmation."""
+    drafts = list_drafts(return_list=True)
+    if index < 1 or index > len(drafts):
+        print(f"Invalid draft index {index}")
+        return
+    target = drafts[index - 1]
+
+    confirm = input(f"Are you sure you want to delete draft '{target.name}'? (y/N): ").strip().lower()
+    if confirm == "y":
+        target.unlink()
+        print(f"[*] Deleted draft: {target.name}")
+    else:
+        print("[*] Cancelled.")
+
+
+def clear_drafts():
+    """Delete all drafts from the workbench, with confirmation."""
+    drafts = list_drafts(return_list=True)
+    if not drafts:
+        print("[*] No drafts to delete.")
+        return
+
+    confirm = input(f"Are you sure you want to delete ALL {len(drafts)} drafts? (y/N): ").strip().lower()
+    if confirm == "y":
+        for d in drafts:
+            d.unlink()
+        print(f"[*] Cleared {len(drafts)} drafts from {WORK_DIR}")
+    else:
+        print("[*] Cancelled.")
+
+
+
+def unmark_core(file: str):
+    """Remove core metadata from an existing file by re-ingesting without core flags."""
+    path = Path(file)
+    if not path.is_absolute():
+        path = CANON_DIR / path
+        if not path.suffix:
+            path = path.with_suffix(".md")
+
+    if not path.exists():
+        print(f"[!] File not found: {path}")
+        return
+
+    ingest_file(path, global_core=False, regional_core=None)
+    print(f"[*] Removed core status from {path.name}")
+
+
+def list_core():
+    """List all files marked as global or regional core, grouped by type."""
+    coll = get_collection()
+    results = coll.get(include=["metadatas"], where={})
+
+    global_core_files = []
+    regional_core_files = {}
+
+    for meta in results["metadatas"]:
+        if not meta:
+            continue
+        source = meta.get("source")
+        if meta.get("global_core", False):
+            if source not in global_core_files:
+                global_core_files.append(source)
+        regional = meta.get("regional_core")
+        if regional:
+            if regional not in regional_core_files:
+                regional_core_files[regional] = []
+            if source not in regional_core_files[regional]:
+                regional_core_files[regional].append(source)
+
+    print("\n=== CORE FILES ===\n")
+    if global_core_files:
+        print("Global Core:")
+        for f in sorted(set(global_core_files)):
+            print(f"  - {Path(f).name}")
+    else:
+        print("Global Core: (none)")
+
+    if regional_core_files:
+        print("\nRegional Core:")
+        for region, files in regional_core_files.items():
+            print(f"  {region}:")
+            for f in sorted(set(files)):
+                print(f"    - {Path(f).name}")
+    else:
+        print("\nRegional Core: (none)")
+
+    print("\n==================\n")
 
 
 
@@ -491,7 +640,8 @@ def main():
     p_ask.add_argument("question", type=str, nargs="+", help="Your question text")
     p_ask.add_argument("--k", type=int, default=8, help="Number of retrieved chunks")
     p_ask.add_argument("--model", type=str, default=DEFAULT_MODEL, help="Ollama model name (e.g., llama3)")
-    p_ask.add_argument("--theme", type=str, default=None, help="Path to theme file (e.g. themes/mycampaign-tone.md)")
+    p_ask.add_argument("--theme", type=str, default=None, help="Path to theme file")
+    p_ask.add_argument("--region", type=str, default=None, help="Optional region tag to include regional core lore")
 
     # --- Create ---
     p_create = sub.add_parser("create", help="Create new lore (interactive). After generation, you can Draft, Publish, Revise, or Discard.")
@@ -508,6 +658,30 @@ def main():
     p_publish = sub.add_parser("publish", help="Publish last AI output (or a given file) to canon. Refuses to overwrite existing titles.")
     p_publish.add_argument("--title", type=str, required=True, help="Title for the canon file")
     p_publish.add_argument("--file", type=str, default=None, help="Optional file path to publish instead of last answer")
+    p_publish.add_argument("--draft", type=int, help="Index of draft from list-drafts")
+    p_publish.add_argument("--global-core", action="store_true", help="Mark this lore as global core (always included)")
+    p_publish.add_argument("--regional-core", type=str, default=None, help="Mark this lore as regional core (tagged by region name)")
+
+    # --- Draft Management ---
+    sub.add_parser("list-drafts", help="List all draft files in the workbench")
+
+    p_del_draft = sub.add_parser("delete-draft", help="Delete a specific draft by index")
+    p_del_draft.add_argument("index", type=int, help="Draft index from list-drafts")
+
+    sub.add_parser("clear-drafts", help="Delete ALL drafts from the workbench")
+
+    # --- Mark Core ---
+    p_mark = sub.add_parser("mark-core", help="Mark a canon file as global or regional core")
+    p_mark.add_argument("file", type=str, help="Path (or title) of the canon file")
+    p_mark.add_argument("--global-core", action="store_true", help="Mark as global core")
+    p_mark.add_argument("--regional-core", type=str, default=None, help="Mark as regional core (region name)")
+
+    # --- Unmark Core ---
+    p_unmark = sub.add_parser("unmark-core", help="Remove core status from a canon file")
+    p_unmark.add_argument("file", type=str, help="Path (or title) of the canon file")
+
+    # --- List Core ---
+    sub.add_parser("list-core", help="List all files marked as global or regional core")
 
     # --- Remove ---
     p_remove = sub.add_parser("remove", help="Remove a lore file and its vector entries")
@@ -533,14 +707,34 @@ def main():
         ingest_folder(Path(args.folder))
     elif args.cmd == "ask":
         question = " ".join(args.question)
-        ask(question, model=args.model, k=args.k, theme_name=args.theme)
+        ask(question, model=args.model, k=args.k, theme_name=args.theme, region=args.region)
     elif args.cmd == "create":
         prompt = " ".join(args.prompt)
         create_new(prompt, model=args.model, theme_name=args.theme)
     elif args.cmd == "draft":
         draft_to_workdir(title=args.title, content_path=Path(args.file) if args.file else None)
     elif args.cmd == "publish":
-        publish_to_canon(title=args.title, content_path=Path(args.file) if args.file else None)
+        if args.draft:
+            drafts = list_drafts(return_list=True)
+            if args.draft < 1 or args.draft > len(drafts):
+                print(f"Invalid draft index {args.draft}")
+                return
+            content_path = drafts[args.draft - 1]
+        else:
+            content_path = Path(args.file) if args.file else None
+        publish_to_canon(title=args.title, content_path=content_path, global_core=args.global_core, regional_core=args.regional_core)
+    elif args.cmd == "list-drafts":
+        list_drafts()
+    elif args.cmd == "delete-draft":
+        delete_draft(args.index)
+    elif args.cmd == "clear-drafts":
+        clear_drafts()
+    elif args.cmd == "mark-core":
+        mark_core(args.file, global_core=args.global_core, regional_core=args.regional_core)
+    elif args.cmd == "unmark-core":
+        unmark_core(args.file)
+    elif args.cmd == "list-core":
+        list_core()
     elif args.cmd == "remove":
         remove_lore(args.file)
     elif args.cmd == "reset":
