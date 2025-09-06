@@ -128,7 +128,7 @@ def ingest_folder(folder: Path):
             to_add_meta.append(ch["metadata"])
 
     coll.add(ids=to_add_ids, documents=to_add_texts, metadatas=to_add_meta)
-    print(f"[✓] Ingested {len(to_add_texts)} chunks from {len(docs)} files.")
+    print(f"[âœ“] Ingested {len(to_add_texts)} chunks from {len(docs)} files.")
 
 
 def query_lore(question: str, k: int = 8) -> Dict[str, Any]:
@@ -432,7 +432,7 @@ def bootstrap_example():
             encoding="utf-8",
         )
         ingest_folder(CANON_DIR)
-        print(f"[✓] Created sample lore at {sample}")
+        print(f"[âœ“] Created sample lore at {sample}")
     else:
         print("[i] Sample lore already exists.")
 
