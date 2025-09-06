@@ -632,8 +632,10 @@ def main():
     sub = parser.add_subparsers(dest="cmd")
 
     # --- Ingest ---
-    p_ingest = sub.add_parser("ingest", help="Ingest a folder of .md/.txt files into the vector DB")
-    p_ingest.add_argument("folder", type=str, help="Path to folder")
+    p_ingest = sub.add_parser("ingest", help="Ingest a folder or single .md/.txt file into the vector DB")
+    p_ingest.add_argument("path", type=str, help="Path to folder or file")
+    p_ingest.add_argument("--global-core", action="store_true", help="Mark this lore as global core")
+    p_ingest.add_argument("--regional-core", type=str, default=None, help="Mark this lore as regional core (region name)")
 
     # --- Ask ---
     p_ask = sub.add_parser("ask", help="Ask a question against your lore")
@@ -704,7 +706,13 @@ def main():
     args = parser.parse_args()
 
     if args.cmd == "ingest":
-        ingest_folder(Path(args.folder))
+        path = Path(args.path)
+        if path.is_file():
+            ingest_file(path, global_core=args.global_core, regional_core=args.regional_core)
+        elif path.is_dir():
+            ingest_folder(path)
+        else:
+            print(f"[!] Path not found: {path}")
     elif args.cmd == "ask":
         question = " ".join(args.question)
         ask(question, model=args.model, k=args.k, theme_name=args.theme, region=args.region)
