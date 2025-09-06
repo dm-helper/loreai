@@ -341,7 +341,7 @@ def publish_to_canon(title: str, content_path: Path = None, generated_text: str 
         raise ValueError("No content provided. Use --content_path, --generated_text, or run 'create' first.")
 
     # Create clean filename (no timestamp)
-    safe_title = title.lower().replace(" ", "-")
+    safe_title = title
     canon_filename = f"{safe_title}.md"
     canon_file_path = CANON_DIR / canon_filename
 
