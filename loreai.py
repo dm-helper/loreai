@@ -128,7 +128,33 @@ def ingest_folder(folder: Path):
             to_add_meta.append(ch["metadata"])
 
     coll.add(ids=to_add_ids, documents=to_add_texts, metadatas=to_add_meta)
-    print(f"[âœ“] Ingested {len(to_add_texts)} chunks from {len(docs)} files.")
+    print(f"[*] Ingested {len(to_add_texts)} chunks from {len(docs)} files.")
+
+
+def ingest_file(file_path: Path):
+    """Ingest a single .md or .txt file into the vector DB."""
+    if not file_path.exists():
+        print(f"[!] File not found: {file_path}")
+        return
+    docs = load_text_files(file_path.parent)
+    # Only keep the doc matching this file
+    docs = [d for d in docs if Path(d["path"]).resolve() == file_path.resolve()]
+    if not docs:
+        print(f"[i] No valid .md or .txt content found in {file_path}")
+        return
+
+    coll = get_collection()
+    to_add_ids, to_add_texts, to_add_meta = [], [], []
+    for d in docs:
+        chunks = chunk_text(d["text"], d["path"])
+        for ch in chunks:
+            to_add_ids.append(ch["id"])
+            to_add_texts.append(ch["text"])
+            to_add_meta.append(ch["metadata"])
+
+    coll.add(ids=to_add_ids, documents=to_add_texts, metadatas=to_add_meta)
+    print(f"[?] Ingested {len(to_add_texts)} chunks from {file_path.name}")
+
 
 
 def query_lore(question: str, k: int = 8) -> Dict[str, Any]:
