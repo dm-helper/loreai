@@ -16,13 +16,21 @@ python loreai.py <command> [options]
 
 ## 🔍 Ingest
 
-**Description:** Ingest a folder of `.md` or `.txt` files into the vector DB.
+**Description:** Ingests lore into the vector database so it can be used in queries.
 
+**Usage:**
 ```bash
-python loreai.py ingest <folder>
+python loreai.py ingest <path> [--global-core] [--regional-core REGION]
 ```
+The <path> can be either:
+A folder containing multiple .md or .txt files
+A single .md or .txt file
 
-* `<folder>` → path to folder containing lore files.
+Options:
+--global-core
+Marks the ingested lore as global core, meaning it will always be included in responses.
+--regional-core REGION
+Marks the ingested lore as regional core for the specified region. Regional core lore is included in queries only when that region is active.
 
 ---
 
