@@ -186,7 +186,20 @@ def create_new(prompt: str, model: str = DEFAULT_MODEL, theme_name: str = None):
     Each revision includes the previous AI output as context.
     """
     guidance = (
-        "Create well-structured lore per the rules. Include a clear 'NEW LORE CANDIDATE' section ready to save to canon."
+        "Generate new lore aligned with the existing lore and THEME.\n"
+        "When creating NPCs, always include the following fields: "
+        "Name, Race, Class / Profession, Role / Occupation, Motivations / Goals, Affiliations / Organizations, Key Relationships, Description.\n"
+        "- If multiple NPCs are requested, output each NPC in a clearly separated block, including all fields and provide a thorough description.\n"
+        "- Keep answers concise and consistent with the existing lore.\n"
+        "- Use the following template for each NPC:\n\n"
+        "NPC Template:\n"
+        "Name:\n"
+        "Race:\n"
+        "Class/Profession/Role/Occupation:\n"
+        "Description:\n"
+        "Motivations & Goals:\n"
+        "Affiliations:\n"
+        "Key Relationships:\n"
     )
     theme_text = load_theme(theme_name)
 
@@ -432,7 +445,7 @@ def bootstrap_example():
             encoding="utf-8",
         )
         ingest_folder(CANON_DIR)
-        print(f"[âœ“] Created sample lore at {sample}")
+        print(f"[*] Created sample lore at {sample}")
     else:
         print("[i] Sample lore already exists.")
 
